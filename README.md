@@ -1,2 +1,2 @@
-# my-website
-自分のページ
+# my-fruit-picker
+自分のフルーツを抽選する
