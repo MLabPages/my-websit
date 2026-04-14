@@ -1,2 +1,2 @@
-# my-websit
-自分のwebサイトのコンテンツいろいろ
+# fruit-picker
+フルーツ抽選
