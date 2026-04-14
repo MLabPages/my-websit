@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>果物ランダム抽選（1回制限・非表示リセット）</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: #fffaf3;
+    color: #222;
+  }
+  .wrap {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 20px 16px 36px;
+    text-align: center;
+  }
+  h1 {
+    font-size: 28px;
+    margin: 8px 0 10px;
+  }
+  .sub {
+    font-size: 15px;
+    color: #555;
+    margin-bottom: 18px;
+    line-height: 1.7;
+  }
+  .card {
+    background: white;
+    border-radius: 20px;
+    padding: 28px 12px;
+    min-height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+    margin-bottom: 18px;
+  }
+  .emoji {
+    font-size: 110px;
+    line-height: 1;
+    margin-bottom: 14px;
+  }
+  .name {
+    font-size: 42px;
+    font-weight: 800;
+  }
+  button {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    border-radius: 999px;
+    font-size: 22px;
+    font-weight: 700;
+    padding: 18px 28px;
+    min-width: 240px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+    cursor: pointer;
+  }
+  .primary { background: #ff8d5c; color: white; }
+  .primary:disabled { background: #cfcfcf; color: #666; cursor: not-allowed; box-shadow: none; }
+  .meta {
+    margin-top: 18px;
+    font-size: 14px;
+    color: #666;
+    line-height: 1.7;
+  }
+  .status {
+    margin: 14px 0 2px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #444;
+  }
+  .badges {
+    margin-top: 16px;
+  }
+  .badge {
+    display: inline-block;
+    background: #fff;
+    padding: 7px 10px;
+    border-radius: 999px;
+    margin: 4px;
+    font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+
+  /* 教員用パネルは通常は完全に非表示 */
+  .admin {
+    display: none;
+    margin-top: 26px;
+    padding: 16px;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    text-align: left;
+  }
+  .admin.show {
+    display: block;
+  }
+  .admin h2 {
+    font-size: 18px;
+    margin: 0 0 10px;
+    text-align: center;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+  }
+  input[type="password"] {
+    box-sizing: border-box;
+    width: min(280px, 100%);
+    font-size: 16px;
+    padding: 12px 14px;
+    border: 1px solid #d8d8d8;
+    border-radius: 12px;
+  }
+
+  /* 左上の見えない起動エリア */
+  #secretHotspot {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 56px;
+    height: 56px;
+    z-index: 9999;
+    background: transparent;
+  }
+</style>
+</head>
+<body>
+  <div id="secretHotspot" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <h1>果物ランダム抽選</h1>
+    <div class="sub">
+      抽選は1回だけ行えます。<br>
+      1度決まったら，この端末ではその結果になります。
+    </div>
+
+    <div class="card">
+      <div id="emoji" class="emoji">🎲</div>
+      <div id="name" class="name">待機中</div>
+      <div id="status" class="status">まだ抽選していません</div>
+    </div>
+
+    <button id="drawButton" class="primary" type="button">抽選する</button>
+
+    <div class="meta">
+      一度抽選すると，この端末では再抽選できません。
+    </div>
+
+    <div class="badges" id="list"></div>
+
+    <div class="admin" id="adminPanel">
+      <h2>教員用リセット</h2>
+      <div class="row">
+        <input id="resetCodeInput" type="password" placeholder="リセットコードを入力">
+        <button id="resetButton" type="button">リセット</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var fruits = [
+    { name: "りんご", emoji: "🍎" },
+    { name: "みかん", emoji: "🍊" },
+    { name: "ぶどう", emoji: "🍇" },
+    { name: "いちご", emoji: "🍓" },
+    { name: "バナナ", emoji: "🍌" },
+    { name: "もも", emoji: "🍑" },
+    { name: "さくらんぼ", emoji: "🍒" },
+    { name: "パイナップル", emoji: "🍍" }
+  ];
+
+  var RESET_CODE = "reset2026";
+  var STORAGE_KEY = "fruit_picker_locked_v2";
+  var RESULT_KEY = "fruit_picker_result_v2";
+
+  var emojiEl = document.getElementById("emoji");
+  var nameEl = document.getElementById("name");
+  var statusEl = document.getElementById("status");
+  var btn = document.getElementById("drawButton");
+  var listEl = document.getElementById("list");
+  var resetInput = document.getElementById("resetCodeInput");
+  var resetBtn = document.getElementById("resetButton");
+  var adminPanel = document.getElementById("adminPanel");
+  var hotspot = document.getElementById("secretHotspot");
+
+  listEl.innerHTML = fruits.map(function (f) {
+    return '<span class="badge">' + f.emoji + ' ' + f.name + '</span>';
+  }).join("");
+
+  function setLockedUI(isLocked) {
+    btn.disabled = isLocked;
+    btn.textContent = isLocked ? "抽選済み" : "抽選する";
+    statusEl.textContent = isLocked ? "この端末では抽選済みです" : "まだ抽選していません";
+  }
+
+  function showResult(result) {
+    emojiEl.textContent = result.emoji;
+    nameEl.textContent = result.name;
+  }
+
+  function drawFruit() {
+    if (localStorage.getItem(STORAGE_KEY) === "1") return;
+
+    var i = Math.floor(Math.random() * fruits.length);
+    var fruit = fruits[i];
+
+    showResult(fruit);
+    localStorage.setItem(STORAGE_KEY, "1");
+    localStorage.setItem(RESULT_KEY, JSON.stringify(fruit));
+    setLockedUI(true);
+  }
+
+  function restoreState() {
+    var isLocked = localStorage.getItem(STORAGE_KEY) === "1";
+    var saved = localStorage.getItem(RESULT_KEY);
+
+    if (saved) {
+      try {
+        var result = JSON.parse(saved);
+        showResult(result);
+      } catch (e) {}
+    }
+
+    setLockedUI(isLocked);
+  }
+
+  function resetDraw() {
+    var code = resetInput.value.trim();
+    if (code !== RESET_CODE) {
+      alert("リセットコードが違います。");
+      return;
+    }
+
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(RESULT_KEY);
+    emojiEl.textContent = "🎲";
+    nameEl.textContent = "待機中";
+    setLockedUI(false);
+    resetInput.value = "";
+    adminPanel.classList.remove("show");
+    alert("この端末の抽選状態をリセットしました。");
+  }
+
+  // 左上を5回タップで教員用パネル表示
+  var tapCount = 0;
+  var firstTapTime = 0;
+
+  hotspot.addEventListener("click", function () {
+    var now = Date.now();
+    if (!firstTapTime || now - firstTapTime > 2500) {
+      firstTapTime = now;
+      tapCount = 1;
+    } else {
+      tapCount += 1;
+    }
+
+    if (tapCount >= 5) {
+      adminPanel.classList.toggle("show");
+      tapCount = 0;
+      firstTapTime = 0;
+    }
+  });
+
+  btn.addEventListener("click", drawFruit);
+  resetBtn.addEventListener("click", resetDraw);
+
+  restoreState();
+})();
+</script>
+</body>
+</html>
